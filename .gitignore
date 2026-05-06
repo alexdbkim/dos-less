@@ -1,0 +1,23 @@
+# Build outputs
+build/*
+!build/.gitkeep
+
+# MASM intermediates that may end up beside sources during DOSBox build
+*.obj
+*.OBJ
+*.com
+*.COM
+*.exe
+*.EXE
+*.map
+*.MAP
+*.lst
+*.LST
+
+# Editor / OS noise
+.DS_Store
+.vscode/
+.idea/
+
+# Toolchain (user-supplied, not redistributable)
+tools/masm/

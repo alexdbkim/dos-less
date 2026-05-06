@@ -1,0 +1,30 @@
+line 01: lorem ipsum dolor sit amet
+line 02: lorem ipsum dolor sit amet
+line 03: lorem ipsum dolor sit amet
+line 04: lorem ipsum dolor sit amet
+line 05: lorem ipsum dolor sit amet
+line 06: lorem ipsum dolor sit amet
+this line has foo in it
+line 08: lorem ipsum dolor sit amet
+line 09: lorem ipsum dolor sit amet
+line 10: lorem ipsum dolor sit amet
+line 11: lorem ipsum dolor sit amet
+line 12: lorem ipsum dolor sit amet
+line 13: lorem ipsum dolor sit amet
+line 14: lorem ipsum dolor sit amet
+line 15: lorem ipsum dolor sit amet
+line 16: lorem ipsum dolor sit amet
+line 17: lorem ipsum dolor sit amet
+and this line has BAR (uppercase)
+line 19: lorem ipsum dolor sit amet
+line 20: lorem ipsum dolor sit amet
+line 21: lorem ipsum dolor sit amet
+line 22: lorem ipsum dolor sit amet
+line 23: lorem ipsum dolor sit amet
+line 24: lorem ipsum dolor sit amet
+another foo here
+line 26: lorem ipsum dolor sit amet
+line 27: lorem ipsum dolor sit amet
+line 28: lorem ipsum dolor sit amet
+line 29: lorem ipsum dolor sit amet
+line 30: lorem ipsum dolor sit amet
