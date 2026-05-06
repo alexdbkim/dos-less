@@ -49,7 +49,28 @@ context quickly.
   - `main.asm` -- numeric goto prefix cleared on non-goto commands so it
     doesn't leak into later `g` / `G`.
 
-## 2026-05-05 — Session 2 (continued): LESS_TEST hook implemented
+## 2026-05-05 — Session 2 (continued): Code-review pass
+
+Independent code review identified several real bugs missed by the
+sub-agent's first pass. Fixes applied:
+
+- **lineidx.asm `idx_line_offset`** — anchor index truncation: after
+  dividing DX:AX by 64, only `mov bx, ax` was used; if line >= 4,194,305
+  the high word was non-zero and BX wrapped, returning offset 0 (wrong
+  line). Added `test dx, dx; jnz ilo_eof` guard.
+- **main.asm `do_toggle_case`** — toggling `-i` now also rebuilds the
+  BMH shift table via `search_set_pattern`, so subsequent `n`/`N` use
+  the new case mode. Previously the table was stale, silently missing
+  matches.
+- **main.asm `do_next_match`/`do_prev_match`** — added zero-pattern
+  guard so pressing `n`/`N` before any search no longer scans the entire
+  file looking for an empty pattern.
+- **main.asm `do_pgdn`** — clamps `top_line_no` so PgDn past EOF no
+  longer leaves the user staring at a screen of `~`. Only enforced once
+  `FLAG_EOF_INDEXED` is set; bare PgDn before EOF-indexing still
+  advances freely (matching real `less`).
+
+
 
 - Added `test_hook_init` (env scan via PSP[2Ch] for `LESS_TEST=1`,
   creates/truncates `LESSTEST.LOG` via INT 21h AH=3Ch).

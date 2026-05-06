@@ -308,7 +308,11 @@ ilo_shift:
     rcr     ax, 1
     loop    ilo_shift
     pop     cx
-    mov     bx, ax                  ; bx = anchor (assume fits in 16 bits)
+    ; If the high word is non-zero, anchor index >= 65536 -- way past
+    ; LINE_INDEX_CAP. Reject before truncating to BX.
+    test    dx, dx
+    jnz     ilo_eof
+    mov     bx, ax                  ; bx = anchor (fits in 16 bits)
     ; ensure anchor exists
     cmp     bx, [idx_anchors_known]
     jb      ilo_have

@@ -189,6 +189,39 @@ do_pgdn:
     mov     dx, word ptr [state + ST_TOP_LINE_NO + 2]
     add     ax, CONTENT_ROWS
     adc     dx, 0
+    ; If we know total_lines, clamp so top + CONTENT_ROWS - 1 <= total
+    ; (i.e., top <= total - CONTENT_ROWS + 1). Past-EOF tildes are ugly.
+    test    word ptr [state + ST_FLAGS], FLAG_EOF_INDEXED
+    jz      do_pgdn_set
+    push    ax
+    push    dx
+    mov     bx, word ptr [state + ST_TOTAL_LINES]
+    mov     cx, word ptr [state + ST_TOTAL_LINES + 2]
+    sub     bx, CONTENT_ROWS - 1
+    sbb     cx, 0
+    jc      do_pgdn_clamp1          ; total < CONTENT_ROWS
+    or      cx, cx
+    jnz     do_pgdn_cmp             ; cap > 64K -- new top fits
+    or      bx, bx
+    jnz     do_pgdn_cmp
+do_pgdn_clamp1:
+    pop     dx
+    pop     ax
+    mov     ax, 1
+    xor     dx, dx
+    jmp     do_pgdn_set
+do_pgdn_cmp:
+    pop     dx
+    pop     ax
+    cmp     dx, cx
+    jb      do_pgdn_set
+    ja      do_pgdn_clamp_to_max
+    cmp     ax, bx
+    jbe     do_pgdn_set
+do_pgdn_clamp_to_max:
+    mov     ax, bx
+    mov     dx, cx
+do_pgdn_set:
     mov     word ptr [state + ST_TOP_LINE_NO], ax
     mov     word ptr [state + ST_TOP_LINE_NO + 2], dx
     or      word ptr [state + ST_FLAGS], FLAG_DIRTY_ALL
@@ -287,6 +320,8 @@ do_search_back:
     jmp     cmd_loop
 
 do_next_match:
+    cmp     word ptr [state + ST_PATTERN_LEN], 0
+    je      cmd_loop                ; no pattern: ignore (avoids whole-file scan)
     mov     ax, word ptr [state + ST_TOP_LINE_NO]
     mov     dx, word ptr [state + ST_TOP_LINE_NO + 2]
     cmp     word ptr [state + ST_SEARCH_DIR], 1
@@ -304,6 +339,8 @@ dnm_check:
     jmp     cmd_loop
 
 do_prev_match:
+    cmp     word ptr [state + ST_PATTERN_LEN], 0
+    je      cmd_loop                ; no pattern: ignore
     mov     ax, word ptr [state + ST_TOP_LINE_NO]
     mov     dx, word ptr [state + ST_TOP_LINE_NO + 2]
     cmp     word ptr [state + ST_SEARCH_DIR], 1
@@ -342,6 +379,16 @@ do_toggle_ln:
 
 do_toggle_case:
     xor     word ptr [state + ST_FLAGS], FLAG_CASE_INSENS
+    ; Pattern_buf may have been case-folded under the previous mode and the
+    ; BMH shift table built for it; rebuild so subsequent n/N use the new
+    ; case mode correctly. (Note: if the previous mode was case-insens, the
+    ; original-case pattern is already lost; this is documented behaviour.)
+    cmp     word ptr [state + ST_PATTERN_LEN], 0
+    je      dtc_redraw
+    mov     si, OFFSET pattern_buf
+    mov     cx, [state + ST_PATTERN_LEN]
+    call    search_set_pattern
+dtc_redraw:
     call    draw_status
     jmp     cmd_loop
 
