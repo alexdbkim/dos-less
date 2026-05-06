@@ -1,9 +1,10 @@
 # Testing
 
-> **Status: scaffolded but not yet wired up.** The runtime test hook
-> (`LESS_TEST=1` → `LESSTEST.LOG`) referenced below is **not yet implemented
-> in the binary**. The driver scripts and case definitions exist but will not
-> produce passing snapshots until the hook lands. Tracked in `docs/DEVLOG.md`.
+> **Status: scaffolded, hook implemented, snapshots not yet seeded.** The
+> runtime test hook (`LESS_TEST=1` → `LESSTEST.LOG`) is implemented in
+> `src/main.asm` (`test_hook_init` + `test_hook_dump`). The driver scripts
+> and case definitions exist; expected snapshots will be seeded by running
+> `tools/test.sh --update` after the first successful MASM build.
 
 `dos-less` is tested by driving the built `LESS.COM` inside DOSBox-X with
 scripted keystrokes against fixed input files, and comparing screen state

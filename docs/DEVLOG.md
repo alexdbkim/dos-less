@@ -49,15 +49,27 @@ context quickly.
   - `main.asm` -- numeric goto prefix cleared on non-goto commands so it
     doesn't leak into later `g` / `G`.
 
+## 2026-05-05 — Session 2 (continued): LESS_TEST hook implemented
+
+- Added `test_hook_init` (env scan via PSP[2Ch] for `LESS_TEST=1`,
+  creates/truncates `LESSTEST.LOG` via INT 21h AH=3Ch).
+- Added `test_hook_dump` called from `repaint` whenever `FLAG_TEST_HOOK`
+  is set: writes a `== repaint N ==` header then 25 rows of screen
+  contents read directly from B800:0000, attribute bytes stripped,
+  trailing spaces trimmed, CRLF row terminator.
+- `do_quit` closes the log handle cleanly.
+- Hook is **disabled on monochrome** (we only read back from B800).
+- New globals: `test_log_handle`, `test_repaint_seq`.
+- Removes the "LESS_TEST not implemented" blocker from the test matrix.
+  `tools/test.sh` should now produce real `LESSTEST.LOG` output once a
+  build succeeds.
+
 **KNOWN ISSUES / NOT YET DONE**
 
 - **Code has NOT been assembled.** MASM 6.0 is not available on this macOS
   host. Every module is a first-pass and will almost certainly need a few
   iterations once `tools/build.sh` is run with real binaries. Treat the
   current source as a *starting point*, not a finished product.
-- **`LESS_TEST=1` test hook is not implemented.** `FLAG_TEST_HOOK` exists
-  in `less.inc` but no code reads the env block, sets the flag, or writes
-  `LESSTEST.LOG`. `tools/test.sh` will therefore fail today.
 - **Repaint is always full-screen.** `FLAG_DIRTY_ALL` is set unconditionally
   by every command; the dirty-bitmap optimisation in
   `docs/ARCHITECTURE.md#6` is not yet implemented.

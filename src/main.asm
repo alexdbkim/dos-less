@@ -83,6 +83,8 @@ start:
     ; Init screen.
     call    scr_init
     call    scr_clear_screen
+    ; Test hook: if LESS_TEST=1 in environment, enable repaint logging.
+    call    test_hook_init
     ; Open first file.
     mov     word ptr [state + ST_CUR_FILE_IDX], 0
     call    files_open_current
@@ -139,6 +141,14 @@ cl_dispatch:
     jmp     cmd_loop
 
 do_quit:
+    test    word ptr [state + ST_FLAGS], FLAG_TEST_HOOK
+    jz      dq_close_file
+    mov     bx, [test_log_handle]
+    or      bx, bx
+    jz      dq_close_file
+    mov     ah, DOS_CLOSE
+    int     21h
+dq_close_file:
     call    files_close_current
     mov     ax, 4C00h
     int     21h
@@ -419,10 +429,158 @@ rp_advance:
     jmp     rp_loop
 rp_status:
     call    draw_status
+    ; Test hook: dump current screen contents to LESSTEST.LOG.
+    test    word ptr [state + ST_FLAGS], FLAG_TEST_HOOK
+    jz      rp_done
+    call    test_hook_dump
+rp_done:
     mov     sp, bp
     pop     bp
     ret
 repaint ENDP
+
+; ----------------------------------------------------------------------------
+; test_hook_init -- detect LESS_TEST=1 in env; if present, set FLAG_TEST_HOOK
+;   and create/truncate LESSTEST.LOG. Stores handle in test_log_handle.
+;   Only enabled on color text mode (we read screen back from B800).
+;   Clobbers: AX, BX, CX, DX, SI, DI, ES.
+; ----------------------------------------------------------------------------
+test_hook_init PROC
+    ; Don't enable on mono -- we read back from B800 only.
+    test    word ptr [state + ST_FLAGS], FLAG_MONO
+    jnz     thi_done
+    ; Walk environment block. ES = PSP[2Ch].
+    mov     ax, word ptr ds:[PSP_ENV_SEG]
+    or      ax, ax
+    jz      thi_done                ; no env
+    mov     es, ax
+    xor     di, di
+thi_outer:
+    ; If first byte at ES:DI is 0, end of env.
+    cmp     byte ptr es:[di], 0
+    je      thi_done
+    ; Compare against "LESS_TEST=1" (case-sensitive).
+    mov     si, OFFSET str_less_test
+    push    di
+thi_cmp:
+    mov     al, [si]
+    or      al, al
+    jz      thi_match
+    cmp     al, byte ptr es:[di]
+    jne     thi_no_match
+    inc     si
+    inc     di
+    jmp     thi_cmp
+thi_no_match:
+    pop     di
+    ; advance to next env entry: skip past terminating 0
+thi_skip_to_nul:
+    cmp     byte ptr es:[di], 0
+    je      thi_past_nul
+    inc     di
+    jmp     thi_skip_to_nul
+thi_past_nul:
+    inc     di
+    jmp     thi_outer
+thi_match:
+    pop     di
+    ; Create LESSTEST.LOG (DOS 3DCh).
+    push    ds
+    pop     es                      ; restore ES = DS for filename
+    mov     dx, OFFSET str_log_file
+    xor     cx, cx                  ; normal attribute
+    mov     ah, 3Ch                 ; create or truncate
+    int     21h
+    jc      thi_done
+    mov     [test_log_handle], ax
+    or      word ptr [state + ST_FLAGS], FLAG_TEST_HOOK
+thi_done:
+    ret
+test_hook_init ENDP
+
+; ----------------------------------------------------------------------------
+; test_hook_dump -- append current screen contents (25 rows x 80 cols) plus
+;   a "== repaint N ==" header to LESSTEST.LOG.
+;   Reads characters from VIDEO_SEG_COLOR (B800) via ES, skipping attr bytes.
+;   Trims trailing spaces from each row to keep snapshots stable.
+;   Clobbers: many.
+; ----------------------------------------------------------------------------
+test_hook_dump PROC
+    push    bp
+    ; ---- header: "== repaint N ==\r\n" ----
+    inc     word ptr [test_repaint_seq]
+    push    ds
+    pop     es
+    mov     di, OFFSET line_buffer
+    mov     si, OFFSET str_repaint_hdr
+    mov     cx, 11                  ; "== repaint "
+    cld
+    rep     movsb
+    mov     ax, word ptr [test_repaint_seq]
+    xor     dx, dx
+    call    util_itoa_dword
+    mov     si, OFFSET str_repaint_hdr_end
+    mov     cx, 5                   ; " ==\r\n"
+    rep     movsb
+    ; write header
+    mov     bx, [test_log_handle]
+    mov     dx, OFFSET line_buffer
+    mov     cx, di
+    sub     cx, dx                  ; CX = bytes assembled
+    mov     ah, DOS_WRITE_HANDLE
+    int     21h
+    ; ---- body: 25 rows ----
+    xor     bp, bp                  ; row counter
+thd_row:
+    cmp     bp, SCREEN_ROWS
+    jae     thd_done
+    ; Compute video offset for this row: row * SCREEN_COLS * 2
+    mov     ax, bp
+    mov     cx, SCREEN_COLS * 2
+    mul     cx
+    mov     si, ax                  ; SI = byte offset in video segment
+    ; Read SCREEN_COLS chars (skipping attribute bytes) into line_buffer.
+    mov     ax, VIDEO_SEG_COLOR
+    mov     es, ax                  ; ES = video segment
+    mov     di, OFFSET line_buffer
+    mov     cx, SCREEN_COLS
+thd_copy:
+    mov     al, byte ptr es:[si]
+    mov     [di], al
+    inc     di
+    add     si, 2                   ; skip attribute byte
+    loop    thd_copy
+    ; Trim trailing spaces: walk back from end.
+    mov     di, OFFSET line_buffer
+    add     di, SCREEN_COLS
+thd_trim:
+    cmp     di, OFFSET line_buffer
+    jbe     thd_emit
+    cmp     byte ptr [di - 1], ' '
+    jne     thd_emit
+    dec     di
+    jmp     thd_trim
+thd_emit:
+    ; Append CRLF.
+    mov     byte ptr [di], 0Dh
+    inc     di
+    mov     byte ptr [di], 0Ah
+    inc     di
+    ; Write row.
+    push    ds
+    pop     es                      ; ES back to DS for any later use
+    mov     bx, [test_log_handle]
+    mov     dx, OFFSET line_buffer
+    mov     cx, di
+    sub     cx, dx
+    mov     ah, DOS_WRITE_HANDLE
+    int     21h
+    inc     bp
+    jmp     thd_row
+thd_done:
+    pop     bp
+    ret
+test_hook_dump ENDP
 
 ; ----------------------------------------------------------------------------
 ; draw_status -- compose status line into line_buffer, write reverse video.
@@ -533,6 +691,12 @@ msg_usage     DB "Usage: LESS [-i] [-N] file [file...]", 0Dh, 0Ah, 0
 msg_open_err  DB "less: cannot open file", 0Dh, 0Ah, 0
 msg_lines     DB "lines "
 
+; Test-hook strings & state.
+str_less_test     DB "LESS_TEST=1", 0
+str_log_file      DB "LESSTEST.LOG", 0
+str_repaint_hdr   DB "== repaint "
+str_repaint_hdr_end DB " ==", 0Dh, 0Ah
+
 ; ----------------------------------------------------------------------------
 ; Globals (BSS-style; placed in DATA segment, zero-initialised by `start`
 ; for the ones we care about). PUBLIC so other modules can EXTRN.
@@ -558,5 +722,7 @@ argv_off          DW MAX_FILES DUP(0)
 idx_anchors_known DW 0
 idx_scan_offset   DD 0
 idx_scan_lineno   DD 0
+test_log_handle   DW 0
+test_repaint_seq  DW 0
 
 END start
